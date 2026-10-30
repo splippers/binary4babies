@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools">
+    <!-- Room scan: planes and the scene mesh. The Quest hides these OpenXR extensions from an app that doesn't declare them. -->
+    <uses-permission android:name="com.oculus.permission.USE_SCENE" />
+    <uses-permission android:name="horizonos.permission.USE_ANCHOR_API" />
+    <!-- Passthrough, so the room shows behind the game. -->
+    <uses-feature android:name="com.oculus.feature.PASSTHROUGH" android:required="true" />
+    <!-- Walk-around AR in the player's own room: ask the headset not to enforce its play-area boundary (the passthrough room is the boundary). -->
+    <uses-feature android:name="com.oculus.feature.BOUNDARYLESS_APP" android:required="true" />
+
+    <!-- Bare-hand throwing. required=false keeps controllers working too. -->
+    <uses-feature android:name="oculus.software.handtracking" android:required="false" />
+    <uses-permission android:name="com.oculus.permission.HAND_TRACKING" />
+
+    <application>
+        <meta-data android:name="com.oculus.handtracking.frequency" android:value="HIGH" />
+        <meta-data android:name="com.oculus.handtracking.version" android:value="V2.0" />
+        <!-- Without these Quest opens the app as a flat 2D window (a black square) instead of immersive AR. -->
+        <meta-data android:name="com.oculus.supportedDevices" android:value="quest|quest2|cambria|eureka|quest3s" />
+        <activity android:name="com.unity3d.player.UnityPlayerGameActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="com.oculus.intent.category.VR" />
+            </intent-filter>
+            <meta-data android:name="com.oculus.vr.focusaware" android:value="true" />
+        </activity>
+    </application>
+</manifest>

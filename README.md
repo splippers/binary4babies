@@ -630,3 +630,32 @@ to:
 ```text
 "I get it!"
 ```
+
+---
+
+## NibBall (AR, Quest 3) — `NibBall/`
+
+A Unity 6 (6000.4.5f1) passthrough game. It reads the room you set up on the headset, fits a row of four
+bins (8 4 2 1) against the best wall it can find, and you throw a ball into them to flip bits.
+Make the number on the board in binary to score.
+
+- **Fits your room:** `ArenaPlacer` picks the wall with the most free floor in front of it. Bins shrink for a
+  narrow wall, the throwing distance shrinks for a shallow room, and a room with no usable wall gets the row in open space.
+- **Errant balls break things:** a fast ball shatters a real window's glass and punches a crater through a real wall
+  (virtual damage painted on a see-through overlay; your actual room is fine) and then carries on into the "outside".
+  Gentle rolls just bounce. The board keeps count of windows and holes.
+- **Controls:** bare hands or controllers. Pinch (or squeeze a trigger) to pick a ball out of the air, open your hand to throw
+  (throw velocity is the hand's own motion). Left X, or a left fist held for a second, re-fits the game to where you are standing.
+- **Setup:** run Room Setup on the Quest first (Settings > Environment Setup) and allow Spatial Data when asked.
+- **Desktop:** open in the editor with no headset for a synthetic 5 x 4 m room; right mouse looks, click throws, Space re-fits.
+
+Build / test (see `NibBall/Assets/Editor/NibBallBuild.cs`):
+
+```
+Unity -batchmode -nographics -projectPath NibBall -executeMethod NibBallBuild.CheckPlacer      # placement-solver checks
+Unity -batchmode -nographics -projectPath NibBall -executeMethod NibBallBuild.BuildTestPlayer  # desktop player
+Builds/test/NibBallTest.x86_64 -batchmode -nographics -nibball-selftest                         # throws balls: bins, window, wall
+Unity -batchmode -nographics -projectPath NibBall -executeMethod NibBallBuild.BuildApk         # Builds/NibBall.apk
+```
+
+The 2D `index.html` is the original prototype (toggle mode and a canvas bounce mode) and the reference for the rules.

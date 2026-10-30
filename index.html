@@ -120,6 +120,24 @@
   }
   .btn-outline:hover { background: rgba(255,255,255,0.12); color: #fff; }
 
+
+  .modes { display: flex; gap: 8px; justify-content: center; margin-bottom: 16px; }
+  .mode-btn {
+    padding: 8px 18px; border-radius: 14px; font-size: 14px; font-weight: 700; cursor: pointer;
+    background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.5);
+    border: 2px solid rgba(255,255,255,0.1); transition: all 0.15s ease;
+  }
+  .mode-btn.active { background: rgba(255,210,0,0.15); color: #ffd200; border-color: rgba(255,210,0,0.5); }
+  .arena-wrap { margin-bottom: 20px; }
+  #arena {
+    display: block; width: 100%; aspect-ratio: 480 / 560; border-radius: 24px;
+    background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08);
+    touch-action: none; cursor: crosshair;
+  }
+  .arena-help { text-align: center; color: rgba(255,255,255,0.35); font-size: 13px; margin-top: 8px; }
+  body.mode-bounce .bits { display: none; }
+  body.mode-toggle .arena-wrap { display: none; }
+
   .celebration {
     position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
     background: rgba(0,0,0,0.6); backdrop-filter: blur(6px);
@@ -155,7 +173,7 @@
   }
 </style>
 </head>
-<body>
+<body class="mode-bounce">
 
 <div class="celebration" id="celebration">
   <div class="box">
@@ -169,11 +187,21 @@
 
 <div class="game">
   <h1>Binary100Babies</h1>
-  <p class="tagline">NibBall — 4 Bits. Endless Fun.</p>
+  <p class="tagline">NibBall — A Whole Game in 4 Bits</p>
 
   <div class="score-row">
     <span>Score</span>
     <span class="val" id="scoreDisplay">0</span>
+  </div>
+
+  <div class="modes" role="group" aria-label="Game mode">
+    <button class="mode-btn active" id="modeBounce" onclick="setMode('bounce')">🏀 Bounce</button>
+    <button class="mode-btn" id="modeToggle" onclick="setMode('toggle')">💡 Easy toggle</button>
+  </div>
+
+  <div class="arena-wrap">
+    <canvas id="arena" width="480" height="560" aria-label="NibBall arena: drop the ball into a box to flip that bit"></canvas>
+    <div class="arena-help">Move to aim, tap or click to drop &middot; ← → and Space work too</div>
   </div>
 
   <div class="bits" role="group" aria-label="Binary bits">
@@ -320,6 +348,186 @@ function spawnFloaties() {
 }
 
 updateDisplay();
+
+// ---------- Bounce mode ----------
+const W = 480, H = 560;
+const BIN_W = W / 4;
+const BIN_TOP = H - 100;
+const FLOOR_Y = H - 10;
+const BALL_R = 11;
+const GRAVITY = 1400, RESTITUTION = 0.55, MAX_SPEED = 1100;
+const BIN_BIT = [3, 2, 1, 0]; // left-to-right bins are 8, 4, 2, 1
+
+const canvas = document.getElementById('arena');
+const ctx = canvas.getContext('2d');
+const dpr = Math.min(window.devicePixelRatio || 1, 2);
+canvas.width = W * dpr;
+canvas.height = H * dpr;
+ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+// Everything the ball bounces off is a capsule: a segment with a radius (pegs have a zero-length segment).
+const caps = [];
+[[80, 200], [240, 200], [400, 200], [160, 300], [320, 300], [80, 390], [240, 390], [400, 390]]
+  .forEach(([x, y]) => caps.push({ ax: x, ay: y, bx: x, by: y, r: 7 }));
+for (let i = 1; i < 4; i++) caps.push({ ax: i * BIN_W, ay: BIN_TOP, bx: i * BIN_W, by: FLOOR_Y, r: 4 });
+
+let mode = 'bounce';
+let aimX = W / 2;
+let ball = null;        // null while aiming
+let settled = null;     // { bin, t } flash after landing
+let binFlash = [0, 0, 0, 0];
+let stuckTime = 0;
+
+function setMode(m) {
+  mode = m;
+  document.body.className = 'mode-' + m;
+  document.getElementById('modeBounce').classList.toggle('active', m === 'bounce');
+  document.getElementById('modeToggle').classList.toggle('active', m === 'toggle');
+}
+
+function dropBall() {
+  if (ball || settled || challengeDone || mode !== 'bounce') return;
+  ball = { x: aimX, y: 40, vx: 0, vy: 0, spin: 0 };
+  stuckTime = 0;
+}
+
+function aimFromEvent(e) {
+  const rect = canvas.getBoundingClientRect();
+  aimX = Math.max(BALL_R + 6, Math.min(W - BALL_R - 6, (e.clientX - rect.left) * (W / rect.width)));
+}
+canvas.addEventListener('pointerdown', e => { aimFromEvent(e); });
+canvas.addEventListener('pointermove', e => { if (!ball) aimFromEvent(e); });
+canvas.addEventListener('pointerup', e => { aimFromEvent(e); dropBall(); });
+window.addEventListener('keydown', e => {
+  if (mode !== 'bounce') return;
+  if (e.key === 'ArrowLeft') { aimX = Math.max(BALL_R + 6, aimX - 20); e.preventDefault(); }
+  else if (e.key === 'ArrowRight') { aimX = Math.min(W - BALL_R - 6, aimX + 20); e.preventDefault(); }
+  else if (e.key === ' ' || e.key === 'ArrowDown') { dropBall(); e.preventDefault(); }
+});
+
+function collide(b, c) {
+  const dx = c.bx - c.ax, dy = c.by - c.ay;
+  const len2 = dx * dx + dy * dy;
+  let t = len2 ? ((b.x - c.ax) * dx + (b.y - c.ay) * dy) / len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  const px = c.ax + dx * t, py = c.ay + dy * t;
+  let nx = b.x - px, ny = b.y - py;
+  const d = Math.hypot(nx, ny), min = BALL_R + c.r;
+  if (d >= min) return;
+  if (d === 0) { nx = 0; ny = -1; } else { nx /= d; ny /= d; }
+  b.x = px + nx * min;
+  b.y = py + ny * min;
+  const vn = b.vx * nx + b.vy * ny;
+  if (vn < 0) {
+    b.vx -= (1 + RESTITUTION) * vn * nx;
+    b.vy -= (1 + RESTITUTION) * vn * ny;
+    b.vx += (Math.random() - 0.5) * 20; // tiny wobble so the ball never balances on a peg
+    b.spin = b.vx / 60;
+  }
+}
+
+function stepBall(dt) {
+  const b = ball;
+  b.vy += GRAVITY * dt;
+  const sp = Math.hypot(b.vx, b.vy);
+  if (sp > MAX_SPEED) { b.vx *= MAX_SPEED / sp; b.vy *= MAX_SPEED / sp; }
+  b.x += b.vx * dt;
+  b.y += b.vy * dt;
+  b.spin *= 0.99;
+  if (b.x < BALL_R) { b.x = BALL_R; b.vx = Math.abs(b.vx) * RESTITUTION; }
+  if (b.x > W - BALL_R) { b.x = W - BALL_R; b.vx = -Math.abs(b.vx) * RESTITUTION; }
+  if (b.y > FLOOR_Y - BALL_R) { b.y = FLOOR_Y - BALL_R; b.vy = -Math.abs(b.vy) * RESTITUTION; b.vx *= 0.98; }
+  for (const c of caps) collide(b, c);
+  stuckTime = Math.hypot(b.vx, b.vy) < 15 ? stuckTime + dt : 0;
+  if (stuckTime > 0.6) { b.vx += (Math.random() < 0.5 ? -1 : 1) * 120; b.vy -= 80; stuckTime = 0; }
+  if (b.y > BIN_TOP + 35) landBall();
+}
+
+function landBall() {
+  const bin = Math.max(0, Math.min(3, Math.floor(ball.x / BIN_W)));
+  settled = { bin, x: ball.x, y: ball.y, t: 0 };
+  binFlash[bin] = 1;
+  ball = null;
+  toggleBit(BIN_BIT[bin]);
+}
+
+let last = performance.now(), acc = 0;
+function frame(now) {
+  acc += Math.min(0.05, (now - last) / 1000);
+  last = now;
+  const dt = 1 / 120;
+  while (acc >= dt) {
+    if (ball) stepBall(dt);
+    if (settled) { settled.t += dt; if (settled.t > 0.7) settled = null; }
+    for (let i = 0; i < 4; i++) binFlash[i] = Math.max(0, binFlash[i] - dt * 2);
+    acc -= dt;
+  }
+  draw(now / 1000);
+  requestAnimationFrame(frame);
+}
+
+function drawBall(x, y, spin) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(spin);
+  const g = ctx.createRadialGradient(-3, -4, 1, 0, 0, BALL_R);
+  g.addColorStop(0, '#fff'); g.addColorStop(0.4, '#ffd200'); g.addColorStop(1, '#f7971e');
+  ctx.shadowColor = 'rgba(255,210,0,0.6)'; ctx.shadowBlur = 14;
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(0, 0, BALL_R, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = 'rgba(26,26,46,0.45)'; ctx.lineWidth = 1.5; // four segments = four bits
+  ctx.beginPath(); ctx.moveTo(-BALL_R, 0); ctx.lineTo(BALL_R, 0); ctx.moveTo(0, -BALL_R); ctx.lineTo(0, BALL_R); ctx.stroke();
+  ctx.restore();
+}
+
+let ballSpin = 0;
+function draw(time) {
+  ctx.clearRect(0, 0, W, H);
+
+  // bins
+  for (let i = 0; i < 4; i++) {
+    const on = bits[BIN_BIT[i]] === 1;
+    const x = i * BIN_W, f = binFlash[i];
+    const grad = ctx.createLinearGradient(0, BIN_TOP, 0, FLOOR_Y);
+    grad.addColorStop(0, on ? 'rgba(255,210,0,0.10)' : 'rgba(255,255,255,0.02)');
+    grad.addColorStop(1, on ? 'rgba(255,210,0,0.40)' : 'rgba(255,255,255,0.07)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, BIN_TOP, BIN_W, FLOOR_Y - BIN_TOP);
+    if (f > 0) { ctx.fillStyle = 'rgba(255,255,255,' + (f * 0.35) + ')'; ctx.fillRect(x, BIN_TOP, BIN_W, FLOOR_Y - BIN_TOP); }
+    ctx.textAlign = 'center';
+    ctx.fillStyle = on ? '#ffd200' : 'rgba(255,255,255,0.3)';
+    ctx.font = '800 34px system-ui, sans-serif';
+    ctx.fillText(String(weights[BIN_BIT[i]]), x + BIN_W / 2, BIN_TOP + 48);
+    ctx.font = '700 16px "Courier New", monospace';
+    ctx.fillText(on ? '1' : '0', x + BIN_W / 2, BIN_TOP + 74);
+  }
+
+  // pegs and dividers
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  ctx.lineCap = 'round';
+  for (const c of caps) {
+    ctx.lineWidth = c.r * 2;
+    ctx.beginPath(); ctx.moveTo(c.ax, c.ay); ctx.lineTo(c.bx, c.by); ctx.stroke();
+    if (c.ax === c.bx && c.ay === c.by) { ctx.beginPath(); ctx.arc(c.ax, c.ay, c.r, 0, Math.PI * 2); ctx.fill(); }
+  }
+  ctx.fillStyle = 'rgba(255,255,255,0.25)';
+  ctx.fillRect(0, FLOOR_Y, W, 10);
+
+  // dropper + aim line + ball
+  if (!ball && !settled && !challengeDone) {
+    ctx.setLineDash([4, 8]); ctx.strokeStyle = 'rgba(255,210,0,0.35)'; ctx.lineWidth = 2; ctx.lineCap = 'butt';
+    ctx.beginPath(); ctx.moveTo(aimX, 40 + BALL_R); ctx.lineTo(aimX, BIN_TOP); ctx.stroke();
+    ctx.setLineDash([]);
+    drawBall(aimX, 40 + Math.sin(time * 3) * 2, 0);
+  }
+  if (ball) { ballSpin += ball.spin * 0.05; drawBall(ball.x, ball.y, ballSpin); }
+  if (settled) {
+    ctx.strokeStyle = 'rgba(255,210,0,' + (1 - settled.t / 0.7) + ')'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(settled.x, settled.y, BALL_R + settled.t * 60, 0, Math.PI * 2); ctx.stroke();
+  }
+}
+requestAnimationFrame(frame);
 </script>
 </body>
 </html>

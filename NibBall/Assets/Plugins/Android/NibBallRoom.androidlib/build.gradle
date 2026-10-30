@@ -1,0 +1,12 @@
+apply plugin: 'com.android.library'
+
+android {
+    namespace "com.splippers.nibball.room"
+    compileSdkVersion 34
+    defaultConfig { minSdkVersion 29 }
+    sourceSets {
+        main {
+            manifest.srcFile 'AndroidManifest.xml'
+        }
+    }
+}
