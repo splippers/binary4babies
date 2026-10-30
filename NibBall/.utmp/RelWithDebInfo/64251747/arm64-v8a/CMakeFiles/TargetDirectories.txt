@@ -1,8 +1,0 @@
-/home/jon/.nibball-test/.utmp/RelWithDebInfo/64251747/arm64-v8a/CMakeFiles/edit_cache.dir
-/home/jon/.nibball-test/.utmp/RelWithDebInfo/64251747/arm64-v8a/CMakeFiles/rebuild_cache.dir
-/home/jon/.nibball-test/.utmp/RelWithDebInfo/64251747/arm64-v8a/GameActivity/CMakeFiles/game.dir
-/home/jon/.nibball-test/.utmp/RelWithDebInfo/64251747/arm64-v8a/GameActivity/CMakeFiles/edit_cache.dir
-/home/jon/.nibball-test/.utmp/RelWithDebInfo/64251747/arm64-v8a/GameActivity/CMakeFiles/rebuild_cache.dir
-/home/jon/.nibball-test/.utmp/RelWithDebInfo/64251747/arm64-v8a/FramePacing/CMakeFiles/swappywrapper.dir
-/home/jon/.nibball-test/.utmp/RelWithDebInfo/64251747/arm64-v8a/FramePacing/CMakeFiles/edit_cache.dir
-/home/jon/.nibball-test/.utmp/RelWithDebInfo/64251747/arm64-v8a/FramePacing/CMakeFiles/rebuild_cache.dir
