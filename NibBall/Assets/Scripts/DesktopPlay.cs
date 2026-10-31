@@ -20,9 +20,10 @@ namespace NibBall
             if (Input.GetMouseButtonDown(0))
             {
                 var ray = cam.ScreenPointToRay(Input.mousePosition);
-                var b = Ball.Create(ray.origin + ray.direction * 0.4f);
+                var b = Ball.Create(ray.origin + ray.direction * 0.4f, Toys.Current);
                 b.Release(ray.direction * 7f + Vector3.up * 1.5f);
             }
+            for (int i = 0; i < Toys.All.Length; i++) if (Input.GetKeyDown(KeyCode.Alpha1 + i)) Toys.Current = Toys.All[i];   // 1-5 pick the toy
             if (Input.GetKeyDown(KeyCode.Space)) ReplaceRequested?.Invoke();
         }
     }

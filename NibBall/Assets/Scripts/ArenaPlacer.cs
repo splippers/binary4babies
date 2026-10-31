@@ -115,7 +115,7 @@ namespace NibBall
             return best;
         }
 
-        static bool Intersect(Vector2 p, Vector2 d, Vector2 a, Vector2 b, out float t)
+        internal static bool Intersect(Vector2 p, Vector2 d, Vector2 a, Vector2 b, out float t)
         {
             t = 0f;
             var e = b - a;

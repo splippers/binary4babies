@@ -18,10 +18,13 @@ namespace NibBall
         IEnumerator Start()
         {
             yield return new WaitForSeconds(0.5f);
+            app.Arena.SetSatellites(false);   // the other checks throw across the room
             yield return Bins();
             yield return Window();
             yield return Wall();
             yield return Gentle();
+            yield return Toysies();
+            yield return Satellites();
             Debug.Log(fails.Length == 0 ? "SELFTEST PASS" : "SELFTEST FAIL\n" + fails);
             Application.Quit(fails.Length == 0 ? 0 : 1);
         }
@@ -48,6 +51,45 @@ namespace NibBall
             Check(a.score == 1, "threw " + target + " into the bins and scored (score " + a.score + ", showing " + a.nibble.Binary + ")");
             yield return new WaitForSeconds(3.2f);
             Check(a.nibble.Value == 0 && a.target != 0, "new round started with cleared bits");
+        }
+
+        IEnumerator Toysies()
+        {
+            foreach (var kind in Toys.All)
+            {
+                var from = new Vector3(0f, 1.5f, 0f);
+                var b = Ball.Create(from, kind);
+                Check(b.col != null && b.rb != null && b.kind == kind, kind + " builds with a collider and a body");
+                b.Release(new Vector3(0.2f, 0f, 0.6f));
+                yield return new WaitForSeconds(1.5f);
+                Check(b != null && b.transform.position.y < 1.5f && b.transform.position.y > -0.5f, kind + " falls and lands on the floor (y " + (b != null ? b.transform.position.y.ToString("0.00") : "gone") + ")");
+                if (b != null) Destroy(b.gameObject);
+            }
+        }
+
+        IEnumerator Satellites()
+        {
+            var a = app.Arena;
+            a.SetSatellites(true);
+            a.nibble.Clear();
+            int hits = 0;
+            for (int bit = 0; bit < 4; bit++)
+            {
+                var sat = a.SatelliteFor(bit);
+                Check(sat != null, "satellite for bit " + Nibble.Weights[bit] + " exists at " + (sat != null ? sat.transform.position.ToString("0.0") : "-"));
+                if (sat == null) continue;
+                var target = sat.transform.position;
+                var from = target + (a.StandHere - target).normalized * 2f; from.y = target.y + 0.1f;
+                bool wasOn = a.nibble.IsOn(bit);
+                var b = Ball.Create(from);
+                b.Release((target - from).normalized * 6f);
+                yield return new WaitForSeconds(0.9f);
+                if (a.nibble.IsOn(bit) != wasOn) hits++;
+                Check(a.nibble.IsOn(bit) != wasOn || a.celebrating || a.score > 0, "a ball thrown at the " + Nibble.Weights[bit] + " bullseye flipped bit " + Nibble.Weights[bit]);
+                if (b != null) Destroy(b.gameObject);
+                yield return new WaitForSeconds(0.2f);
+            }
+            a.SetSatellites(false);
         }
 
         IEnumerator Window()

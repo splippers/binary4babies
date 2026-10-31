@@ -187,11 +187,11 @@ namespace NibBall
             var layout = ArenaPlacer.Solve(surfaces, Cam.transform.position, Cam.transform.forward, floorY);
             int score = 0;
             if (Arena != null) { score = Arena.score; Destroy(Arena.gameObject); }
-            Arena = Arena.Build(layout);
+            Arena = Arena.Build(layout, surfaces);
             Arena.score = score;
             Arena.SetHint(layout.againstWall
-                ? "Stand on the ring.  Squeeze, swing, let go.   X = move the game"
-                : "No wall to fit against, so the bins stand in open space.   X = move the game");
+                ? "Stand on the ring.  Pinch a toy off the rack, swing, let go.  Bullseyes around the room flip bits too"
+                : "No wall to fit against, so the bins stand in open space.  Bullseyes around the room flip bits too");
             Debug.Log($"NibBall: arena at {layout.baseCenter} facing {layout.forward}, bins {layout.binWidth:0.00} m, throw {layout.throwDistance:0.0} m, wall {layout.againstWall}, room depth {layout.depthAvailable:0.0} m");
         }
     }

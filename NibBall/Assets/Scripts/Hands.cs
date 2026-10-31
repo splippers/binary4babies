@@ -30,7 +30,7 @@ namespace NibBall
         readonly Queue<Ball> alive = new Queue<Ball>();
         readonly List<XRHandSubsystem> handSystems = new List<XRHandSubsystem>();
         XRHandSubsystem hs;
-        bool xWas, yWas;
+        bool xWas, yWas, aWas;
 
         /// <summary>What the input is doing right now, for the on-screen readout.</summary>
         public string Mode { get; private set; } = "no hands or controllers yet";
@@ -51,6 +51,11 @@ namespace NibBall
             bool x = left.isValid && left.TryGetFeatureValue(CommonUsages.primaryButton, out bool pressed) && pressed;
             if (x && !xWas) ReplaceRequested?.Invoke();
             xWas = x;
+
+            var right = InputDevices.GetDeviceAtXRNode(XRNode.RightHand);
+            bool a = right.isValid && right.TryGetFeatureValue(CommonUsages.primaryButton, out bool aPressed) && aPressed;
+            if (a && !aWas) Toys.Next();
+            aWas = a;
 
             bool y = left.isValid && left.TryGetFeatureValue(CommonUsages.secondaryButton, out bool sec) && sec;
             if (y && !yWas) RoomMesh.Instance?.Toggle();
@@ -114,7 +119,7 @@ namespace NibBall
             h.trail.Add((Time.time, track));
             while (h.trail.Count > 2 && Time.time - h.trail[0].t > 0.25f) h.trail.RemoveAt(0);
 
-            if (down && !h.wasDown && h.held == null) Pick(h);
+            if (down && !h.wasDown && h.held == null) Pick(h, grip);
             if (h.held != null)
             {
                 if (down) h.held.transform.SetPositionAndRotation(grip, rot);
@@ -141,9 +146,9 @@ namespace NibBall
             h.wasDown = false; h.fist = false; h.trail.Clear();
         }
 
-        void Pick(Hand h)
+        void Pick(Hand h, Vector3 at)
         {
-            var b = Ball.Create(transform.position);
+            var b = Ball.Create(at, RackItem.Choose(at));
             b.Hold();
             h.held = b;
             alive.Enqueue(b);

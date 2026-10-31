@@ -19,15 +19,19 @@ namespace NibBall
         static readonly Color Off = new Color(0.22f, 0.27f, 0.38f), On = new Color(1f, 0.8f, 0.15f), Good = new Color(0.25f, 0.9f, 0.45f);
 
         Bin[] bins = new Bin[4];
+        readonly Satellite[] satellites = new Satellite[4];
+        Transform satelliteRoot;
+        System.Collections.Generic.IList<Surface> room;
         Transform board;
         TextMesh headline, readout, damage, hint;
         readonly System.Random rng = new System.Random();
 
-        public static Arena Build(ArenaLayout layout)
+        public static Arena Build(ArenaLayout layout, System.Collections.Generic.IList<Surface> room = null)
         {
             var go = new GameObject("Arena");
             var a = go.AddComponent<Arena>();
             a.layout = layout;
+            a.room = room;
             go.transform.position = layout.baseCenter;
             go.transform.rotation = Quaternion.LookRotation(-layout.forward, Vector3.up);   // local +Z points at the wall
             a.Construct();
@@ -62,6 +66,13 @@ namespace NibBall
                 Look.Box(ring.transform, "dot", new Vector3(Mathf.Cos(a) * 0.3f, 0f, Mathf.Sin(a) * 0.3f), new Vector3(0.03f, 0.004f, 0.03f), glow, false);
             }
 
+            // the toy rack, a little to the right of the ring at hand height, and the room for the satellite targets
+            var facing = -layout.forward;
+            var across = Vector3.Cross(Vector3.up, facing).normalized;
+            ToyRack.Build(transform, StandHere + across * 0.62f + Vector3.up * 0.95f - facing * 0.1f, across);
+            satelliteRoot = new GameObject("Satellites").transform;
+            satelliteRoot.SetParent(transform, false);
+
             // scoreboard above the row, turned to face the player
             board = new GameObject("Board").transform;
             board.SetParent(transform, false);
@@ -90,15 +101,34 @@ namespace NibBall
             target = nibble.NextTarget(rng);
             celebrating = false;
             for (int i = 0; i < 4; i++) bins[i].SetLit(false, Off);
+            PlaceSatellites();
             Refresh();
         }
 
-        public void OnBin(int index, Ball ball)
+        /// <summary>Four bullseyes around the room, one per bit, in new places every round.</summary>
+        void PlaceSatellites()
+        {
+            foreach (Transform c in satelliteRoot) Destroy(c.gameObject);
+            var spots = SatellitePlacer.Solve(layout, room, layout.baseCenter.y, rng);
+            for (int i = 0; i < 4; i++)
+            {
+                satellites[i] = Satellite.Build(this, i, spots[i]);
+                satellites[i].transform.SetParent(satelliteRoot, true);
+            }
+        }
+
+        public void SetSatellites(bool on) { satelliteRoot.gameObject.SetActive(on); }
+        public Satellite SatelliteFor(int bit) => satellites[bit];
+
+        public void OnBin(int index, Ball ball) => Flip(index, bins[index].transform.position);
+
+        /// <summary>A ball found a bin or a satellite: that bit flips, and a matching number scores.</summary>
+        public void Flip(int index, Vector3 at)
         {
             if (celebrating) return;
             bool on = nibble.Toggle(index);
             bins[index].SetLit(on, On);
-            if (on) Sfx.BitOn(bins[index].transform.position); else Sfx.BitOff(bins[index].transform.position);
+            if (on) Sfx.BitOn(at); else Sfx.BitOff(at);
             if (nibble.Value == target) StartCoroutine(Celebrate());
             Refresh();
         }
@@ -120,6 +150,7 @@ namespace NibBall
             if (headline == null) return;
             headline.text = celebrating ? "YES!  " + target + " = " + nibble.Binary : "Make  " + target;
             readout.text = nibble.Binary + "  =  " + nibble.Value + "      score " + score;
+            for (int i = 0; i < 4; i++) if (satellites[i] != null) satellites[i].SetLit(nibble.IsOn(i), celebrating ? Good : On);
             damage.text = windowsBroken + holesPunched == 0 ? "" : "Oops!  windows " + windowsBroken + "   wall holes " + holesPunched;
             Changed?.Invoke();
         }
