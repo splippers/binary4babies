@@ -18,6 +18,9 @@ namespace NibBall
         static readonly System.Collections.Generic.Dictionary<Toy, Material> mats = new System.Collections.Generic.Dictionary<Toy, Material>();
         static readonly System.Collections.Generic.Dictionary<Toy, PhysicsMaterial> physics = new System.Collections.Generic.Dictionary<Toy, PhysicsMaterial>();
 
+        // Engine code stripping drops physics classes that no code names; CreatePrimitive then fails at run time on the headset only.
+        static readonly System.Type[] KeepColliders = { typeof(SphereCollider), typeof(CapsuleCollider), typeof(BoxCollider), typeof(MeshCollider) };
+
         public struct ToySpec { public float radius, mass, bounce, drag, spinDrag; public PhysicsMaterialCombine combine; }
 
         /// <summary>How each toy flies: size, weight, springiness and air drag. The beach ball floats, the ping pong ball is all spring, the banana thuds.</summary>
@@ -40,11 +43,40 @@ namespace NibBall
             switch (k)
             {
                 case Toy.PingPong: m = Look.Lit_(new Color(1f, 0.97f, 0.9f)); break;
-                case Toy.Tennis: m = Look.Lit_(new Color(0.8f, 0.95f, 0.2f)); break;
+                case Toy.Tennis: m = Look.Lit_(Color.white); m.mainTexture = TennisSeam(); break;
                 case Toy.BeachBall: m = Look.Lit_(Color.white); m.mainTexture = Stripes(new Color(0.95f, 0.2f, 0.2f), Color.white, new Color(0.2f, 0.45f, 0.95f), new Color(1f, 0.85f, 0.1f)); break;
                 default: m = Look.Lit_(Color.white); m.mainTexture = Stripes(new Color(1f, 0.55f, 0.1f), new Color(1f, 0.85f, 0.1f), new Color(0.2f, 0.75f, 1f), new Color(1f, 0.35f, 0.7f)); break;
             }
             return mats[k] = m;
+        }
+
+        /// <summary>Optic-yellow felt with the white seam that makes the classic S on each side: the baseball curve a=.75, b=.25 laid on the sphere.</summary>
+        static Texture2D TennisSeam()
+        {
+            const int W = 256, H = 128, N = 240;
+            var curve = new Vector3[N];
+            for (int i = 0; i < N; i++)
+            {
+                float t = i * Mathf.PI * 2f / N;
+                curve[i] = new Vector3(0.75f * Mathf.Cos(t) + 0.25f * Mathf.Cos(3f * t), 0.75f * Mathf.Sin(t) - 0.25f * Mathf.Sin(3f * t), 0.866f * Mathf.Sin(2f * t)).normalized;
+            }
+            var felt = new Color(0.93f, 0.9f, 0.12f);
+            var seam = new Color(0.97f, 0.97f, 0.92f);
+            var px = new Color[W * H];
+            const float cosEdge = 0.99755f;   // within about 4 degrees of the seam
+            for (int y = 0; y < H; y++)
+                for (int x = 0; x < W; x++)
+                {
+                    float lon = (x + 0.5f) / W * Mathf.PI * 2f, lat = ((y + 0.5f) / H - 0.5f) * Mathf.PI;
+                    var d = new Vector3(Mathf.Cos(lat) * Mathf.Cos(lon), Mathf.Sin(lat), Mathf.Cos(lat) * Mathf.Sin(lon));
+                    float best = -1f;
+                    for (int i = 0; i < N; i++) { float dot = Vector3.Dot(d, curve[i]); if (dot > best) best = dot; }
+                    px[y * W + x] = best > cosEdge ? seam : felt;
+                }
+            var tex = new Texture2D(W, H, TextureFormat.RGBA32, true) { wrapMode = TextureWrapMode.Repeat };
+            tex.SetPixels(px);
+            tex.Apply();
+            return tex;
         }
 
         static Texture2D Stripes(params Color[] c)
@@ -105,9 +137,9 @@ namespace NibBall
             go.transform.position = at;
             var b = go.AddComponent<Ball>();
             b.kind = kind;
+            b.rb = go.AddComponent<Rigidbody>();
             b.col = go.GetComponent<Collider>();
             b.col.sharedMaterial = Phys(kind);
-            b.rb = go.AddComponent<Rigidbody>();
             b.rb.mass = sp.mass;
             b.rb.linearDamping = sp.drag;
             b.rb.angularDamping = sp.spinDrag;
@@ -128,7 +160,11 @@ namespace NibBall
             preVelocity = velocity;
         }
 
-        void FixedUpdate() { if (!held) preVelocity = rb.linearVelocity; }
+        void FixedUpdate()
+        {
+            if (rb == null) { Destroy(gameObject); return; }   // a half-built ball is never left lying about
+            if (!held) preVelocity = rb.linearVelocity;
+        }
 
         void Update()
         {

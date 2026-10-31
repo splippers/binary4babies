@@ -1,0 +1,13 @@
+<linker>
+  <assembly fullname="Unity.XR.CoreUtils" preserve="all" />
+  <assembly fullname="Unity.XR.Management" preserve="all" />
+  <assembly fullname="Unity.XR.OpenXR" preserve="all" />
+  <assembly fullname="Unity.XR.Hands" preserve="all" />
+  <assembly fullname="Unity.XR.MetaOpenXR" preserve="all" />
+  <assembly fullname="Unity.XR.ARFoundation" preserve="all" />
+  <assembly fullname="Unity.XR.ARSubsystems" preserve="all" />
+  <assembly fullname="UnityEngine.XRModule" preserve="all" />
+  <assembly fullname="UnityEngine.PhysicsModule" preserve="all" />
+  <assembly fullname="Unity.InputSystem" preserve="all" />
+  <assembly fullname="Assembly-CSharp" preserve="all" />
+</linker>

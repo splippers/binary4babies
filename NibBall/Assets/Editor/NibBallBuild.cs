@@ -23,6 +23,7 @@ public static class NibBallBuild
         "com.unity.openxr.feature.arfoundation-meta-plane",
         "com.unity.openxr.feature.arfoundation-meta-mesh",
         "com.unity.openxr.feature.input.handtracking",
+        "com.unity.openxr.feature.input.metahandtrackingaim",   // BoreDoom: without the aim feature the headset can report no hand devices
     };
 
     [MenuItem("NibBall/Build Scene")]
@@ -68,6 +69,7 @@ public static class NibBallBuild
         PlayerSettings.productName = "NibBall";
         PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "com.splippers.nibball");
         PlayerSettings.SetScriptingBackend(NamedBuildTarget.Android, ScriptingImplementation.IL2CPP);
+        PlayerSettings.SetManagedStrippingLevel(NamedBuildTarget.Android, ManagedStrippingLevel.Low);   // the XR and hand subsystems are found by reflection; link.xml keeps them
         PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
         PlayerSettings.Android.minSdkVersion = AndroidSdkVersions.AndroidApiLevel32;
         PlayerSettings.colorSpace = ColorSpace.Linear;

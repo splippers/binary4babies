@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 
@@ -23,6 +24,7 @@ namespace NibBall
             yield return Window();
             yield return Wall();
             yield return Gentle();
+            yield return MeshWallsCheck();
             yield return Toysies();
             yield return Satellites();
             Debug.Log(fails.Length == 0 ? "SELFTEST PASS" : "SELFTEST FAIL\n" + fails);
@@ -51,6 +53,29 @@ namespace NibBall
             Check(a.score == 1, "threw " + target + " into the bins and scored (score " + a.score + ", showing " + a.nibble.Binary + ")");
             yield return new WaitForSeconds(3.2f);
             Check(a.nibble.Value == 0 && a.target != 0, "new round started with cleared bits");
+        }
+
+        IEnumerator MeshWallsCheck()
+        {
+            // a 5 x 2.6 x 4 m room as an inward-facing triangle soup with a table-top bump: expect its four walls and nothing from the bump
+            var m = new Mesh { indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+            var v = new List<Vector3>(); var ix = new List<int>();
+            void Quad(Vector3 a, Vector3 b, Vector3 c, Vector3 d) { int o = v.Count; v.AddRange(new[] { a, b, c, d }); ix.AddRange(new[] { o, o + 1, o + 2, o, o + 2, o + 3 }); }
+            float hx = 2.5f, hz = 2f, h = 2.6f;
+            Quad(new Vector3(-hx, 0, -hz), new Vector3(hx, 0, -hz), new Vector3(hx, h, -hz), new Vector3(-hx, h, -hz));   // normals face +Z (into the room)
+            Quad(new Vector3(hx, 0, hz), new Vector3(-hx, 0, hz), new Vector3(-hx, h, hz), new Vector3(hx, h, hz));
+            Quad(new Vector3(-hx, 0, hz), new Vector3(-hx, 0, -hz), new Vector3(-hx, h, -hz), new Vector3(-hx, h, hz));
+            Quad(new Vector3(hx, 0, -hz), new Vector3(hx, 0, hz), new Vector3(hx, h, hz), new Vector3(hx, h, -hz));
+            Quad(new Vector3(-0.4f, 0.7f, -0.3f), new Vector3(0.4f, 0.7f, -0.3f), new Vector3(0.4f, 0.7f, 0.3f), new Vector3(-0.4f, 0.7f, 0.3f));   // a table top: horizontal, must not count
+            m.SetVertices(v); m.SetTriangles(ix, 0);
+            var walls = new List<MeshWalls.Wall>();
+            yield return app.StartCoroutine(MeshWalls.Extract(new List<(Mesh, Matrix4x4)> { (m, Matrix4x4.identity) }, new Vector3(0f, 1.5f, 0f), walls));
+            Check(walls.Count == 4, "four walls found in a synthetic scan mesh (found " + walls.Count + ")");
+            foreach (var w in walls)
+            {
+                bool inward = Vector3.Dot(w.normal, new Vector3(0f, 0f, 0f) - w.center) > 0f;
+                Check(inward && w.size.x > 3.5f && w.size.y > 2.3f, "wall at " + w.center.ToString("0.0") + " faces the room and measures " + w.size.x.ToString("0.0") + " x " + w.size.y.ToString("0.0"));
+            }
         }
 
         IEnumerator Toysies()

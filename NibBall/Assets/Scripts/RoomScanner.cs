@@ -21,7 +21,11 @@ namespace NibBall
 
         void OnChanged(ARTrackablesChangedEventArgs<ARPlane> args)
         {
-            foreach (var p in args.added) Sync(p);
+            foreach (var p in args.added)
+            {
+                Debug.Log($"NibBall: plane {p.trackableId} classes={p.classifications} alignment={p.alignment} size={p.size} -> {Classify(p)}");
+                Sync(p);
+            }
             foreach (var p in args.updated) Sync(p);
             foreach (var kv in args.removed) map.Remove(kv.Key);   // the surface is a child of the plane, which AR Foundation destroys
         }

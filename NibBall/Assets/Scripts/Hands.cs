@@ -13,7 +13,7 @@ namespace NibBall
     public sealed class Hands : MonoBehaviour
     {
         public Transform trackingSpace;
-        public System.Action ReplaceRequested;
+        public System.Action ReplaceRequested, ScanRequested;
         const int MaxBalls = 10;
         const float PinchOn = 0.025f, PinchOff = 0.04f, FistOn = 0.065f, FistOff = 0.09f, FistHold = 1.2f;
 
@@ -30,10 +30,18 @@ namespace NibBall
         readonly Queue<Ball> alive = new Queue<Ball>();
         readonly List<XRHandSubsystem> handSystems = new List<XRHandSubsystem>();
         XRHandSubsystem hs;
-        bool xWas, yWas, aWas;
+        bool xWas, yWas, aWas, bWas;
+        float bothSince = -1f;
 
         /// <summary>What the input is doing right now, for the on-screen readout.</summary>
         public string Mode { get; private set; } = "no hands or controllers yet";
+
+        /// <summary>One line of hand-tracking state for the log.</summary>
+        public string Describe()
+        {
+            string s = hs == null ? "XR Hands subsystem: none" : $"XR Hands subsystem: running={hs.running} left={hs.leftHand.isTracked} right={hs.rightHand.isTracked}";
+            return s + $"; controllers left={ControllerOn(XRNode.LeftHand)} right={ControllerOn(XRNode.RightHand)}; {Mode}";
+        }
 
         void Update()
         {
@@ -57,13 +65,27 @@ namespace NibBall
             if (a && !aWas) Toys.Next();
             aWas = a;
 
+            bool b = right.isValid && right.TryGetFeatureValue(CommonUsages.secondaryButton, out bool bPressed) && bPressed;
+            if (b && !bWas) ScanRequested?.Invoke();
+            bWas = b;
+
             bool y = left.isValid && left.TryGetFeatureValue(CommonUsages.secondaryButton, out bool sec) && sec;
             if (y && !yWas) RoomMesh.Instance?.Toggle();
             yWas = y;
 
-            // no buttons on bare hands: hold a fist (left = move the game, right = show / hide the scan)
-            FistAction(hands[1], () => ReplaceRequested?.Invoke());
-            FistAction(hands[0], () => RoomMesh.Instance?.Toggle());
+            // no buttons on bare hands: hold a fist (left = move the game, right = show / hide the scan), or both fists to scan the room
+            bool both = hands[0].usingHand && hands[1].usingHand && hands[0].fist && hands[1].fist && hands[0].held == null && hands[1].held == null;
+            if (both)
+            {
+                if (bothSince < 0f) bothSince = Time.time;
+                else if (Time.time - bothSince > 1.5f) { ScanRequested?.Invoke(); bothSince = float.MaxValue; }
+            }
+            else bothSince = -1f;
+            if (!both)
+            {
+                if (!hands[0].fist) FistAction(hands[1], () => ReplaceRequested?.Invoke());
+                if (!hands[1].fist) FistAction(hands[0], () => RoomMesh.Instance?.Toggle());
+            }
         }
 
         void FistAction(Hand h, System.Action act)
@@ -119,7 +141,11 @@ namespace NibBall
             h.trail.Add((Time.time, track));
             while (h.trail.Count > 2 && Time.time - h.trail[0].t > 0.25f) h.trail.RemoveAt(0);
 
-            if (down && !h.wasDown && h.held == null) Pick(h, grip);
+            if (down && !h.wasDown && h.held == null)
+            {
+                try { Pick(h, grip); }
+                catch (System.Exception e) { Debug.LogError("NibBall: could not pick up a toy: " + e); }
+            }
             if (h.held != null)
             {
                 if (down) h.held.transform.SetPositionAndRotation(grip, rot);

@@ -133,11 +133,13 @@ namespace NibBall
             var scanner = origin.gameObject.AddComponent<RoomScanner>();
             scanner.planes = pm;
 
-            RoomMesh.Create(origin.TrackablesParent);
+            var roomMesh = RoomMesh.Create(origin.TrackablesParent);
+            roomMesh.WallsFound += Place;   // the first walls found in the scan: refit the game to them
 
             var hands = gameObject.AddComponent<Hands>();
             hands.trackingSpace = trackingSpace;
             hands.ReplaceRequested = Place;
+            hands.ScanRequested = RequestRoomScan;
 
             Show("Looking at your room...  (Y shows / hides the scan)");
             float t = 0f, sinceFirstWall = -1f;
@@ -148,9 +150,10 @@ namespace NibBall
                 if (sinceFirstWall >= 0f) { sinceFirstWall += Time.deltaTime; if (sinceFirstWall > 2.5f) break; }
                 yield return null;
             }
-            if (scanner.WallCount == 0) Show("No room scan found. Run Room Setup in Quest settings. Playing in open space.");
+            if (scanner.WallCount == 0) Show("No room scan found.  Press B (or hold both fists) to scan your room.  Playing in open space.");
             Place();
             StartCoroutine(ScanReadout(scanner, hands));
+            ToySelfCheck();
         }
 
         /// <summary>For the first minute, says what the room scan found, so a missing scan is obvious from inside the headset.</summary>
@@ -170,11 +173,36 @@ namespace NibBall
                     if (RoomMesh.Instance != null && RoomMesh.Instance.manager != null) { RoomMesh.Instance.manager.enabled = false; RoomMesh.Instance.manager.enabled = true; }
                 }
 #endif
-                Show($"Spatial data: {permissionState}\nRoom scan: {RoomSurface.All.Count} surfaces, {scanner.WallCount} walls, {chunks} mesh pieces, {tris} triangles\n{hands.Mode}");
-                if (t == 20f) Debug.Log($"NibBall: scan permission {permissionState}, {RoomSurface.All.Count} surfaces, {scanner.WallCount} walls, {chunks} mesh chunks, {tris} triangles; input: {hands.Mode}");
+                Show($"Spatial data: {permissionState}\nRoom scan: {RoomSurface.All.Count} surfaces, {scanner.WallCount} walls, {chunks} mesh pieces, {tris} triangles\n{hands.Mode}\nB (or both fists): scan your room");
+                if (t == 20f) Debug.Log($"NibBall: scan permission {permissionState}, {RoomSurface.All.Count} surfaces, {scanner.WallCount} walls, {chunks} mesh chunks, {tris} triangles; input: {hands.Describe()}");
+                if (t % 10f == 5f) Debug.Log("NibBall: " + hands.Describe());
                 yield return new WaitForSeconds(1f);
             }
             Show("");
+        }
+
+        /// <summary>Builds one of each toy and logs the result, so a build whose code stripping broke a toy says so in the log on first launch.</summary>
+        void ToySelfCheck()
+        {
+            foreach (var kind in Toys.All)
+            {
+                try { var b = Ball.Create(new Vector3(0f, -50f, 0f), kind); b.Hold(); Destroy(b.gameObject); Debug.Log("NibBall: toy " + kind + " ok"); }
+                catch (Exception e) { Debug.LogError("NibBall: toy " + kind + " FAILED: " + e.Message); }
+            }
+        }
+
+        /// <summary>Opens the Quest's own room scan (Space Setup capture) from inside the game. Needs the Meta session feature; the planes and mesh appear as it finishes.</summary>
+        public void RequestRoomScan()
+        {
+            bool ok = false;
+#if UNITY_ANDROID && !UNITY_EDITOR
+            var session = FindAnyObjectByType<ARSession>();
+            var meta = session != null ? session.subsystem as UnityEngine.XR.OpenXR.Features.Meta.MetaOpenXRSessionSubsystem : null;
+            try { ok = meta != null && meta.TryRequestSceneCapture(); }
+            catch (Exception e) { Debug.LogError("NibBall: room scan request failed: " + e.Message); }
+#endif
+            Debug.Log("NibBall: room scan requested, accepted=" + ok);
+            Show(ok ? "Opening the Quest room scan...  look at every wall, window, door and the furniture" : "The headset would not start a room scan from here.  Try Settings > Environment Setup > Space Setup");
         }
 
         void Show(string text) { if (status != null) status.text = text; }
