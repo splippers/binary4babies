@@ -28,6 +28,8 @@ namespace NibBall
 
         struct Hole { public Vector2 pos; public float r; }
         readonly List<Hole> holes = new List<Hole>();
+        GameObject overlay;
+        Vector2 paneHit;
         Texture2D tex;
         Color32[] pix;
         int tw, th;
@@ -66,6 +68,41 @@ namespace NibBall
             rs.name = "Surface patch";
             return rs;
         }
+
+        public bool HasDamage => broken || holes.Count > 0;
+
+        /// <summary>Mends every hole and pane: the overlay goes, the surface solid again. Returns how many surfaces were fixed.</summary>
+        public static int RepairAll()
+        {
+            int n = 0;
+            foreach (var s in All) if (s.Repair()) n++;
+            return n;
+        }
+
+        public bool Repair()
+        {
+            if (!HasDamage) return false;
+            broken = false;
+            holes.Clear();
+            if (overlay != null) Destroy(overlay);
+            if (tex != null) Destroy(tex);
+            overlay = null; tex = null; pix = null;
+            return true;
+        }
+
+        /// <summary>World-space spots where this surface is damaged, nudged off the face towards 'viewer' so a sight-line can reach them.</summary>
+        public void DamageSpots(Vector3 viewer, List<Vector3> into)
+        {
+            into.Clear();
+            float side = Vector3.Dot(transform.up, viewer - transform.position) >= 0f ? 1f : -1f;
+            var off = transform.up * (side * 0.05f + (kind == SurfaceKind.Window || kind == SurfaceKind.Door ? 0.02f : 0f));
+            if (broken) into.Add(transform.TransformPoint(new Vector3(paneHit.x, 0f, paneHit.y)) + off);
+            foreach (var h in holes) into.Add(transform.TransformPoint(new Vector3(h.pos.x, 0f, h.pos.y)) + off);
+        }
+
+        public bool DamageShown => overlay != null && overlay.activeSelf;
+
+        public void ShowDamage(bool on) { if (overlay != null && overlay.activeSelf != on) overlay.SetActive(on); }
 
         void OnEnable() { All.Add(this); }
         void OnDisable() { All.Remove(this); }
@@ -156,6 +193,7 @@ namespace NibBall
             broken = true;
             var local = transform.InverseTransformPoint(world);
             var p = new Vector2(local.x, local.z);
+            paneHit = p;
             EnsureOverlay();
             Disc(p, 0.11f, new Color32(0, 0, 0, 0), new Color32(235, 245, 255, 210));
             float reach = Mathf.Max(size.x, size.y);
@@ -185,6 +223,7 @@ namespace NibBall
             tex.SetPixels32(pix);
             tex.Apply();
             var go = new GameObject("Damage");
+            overlay = go;
             go.transform.SetParent(transform, false);
             go.transform.localPosition = new Vector3(0f, (kind == SurfaceKind.Window || kind == SurfaceKind.Door ? 0.02f : 0f) + 0.004f, 0f);
             go.AddComponent<MeshFilter>().sharedMesh = Look.PlaneMesh(size.x, size.y);

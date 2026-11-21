@@ -35,6 +35,7 @@ namespace NibBall
         {
             Look.SetupPhysics();
             BuildRig();
+            gameObject.AddComponent<DamageVisibility>().cam = Cam;
             var displays = new System.Collections.Generic.List<XRDisplaySubsystem>();
             SubsystemManager.GetSubsystems(displays);
             inHeadset = displays.Count > 0 && displays[0].running;
@@ -48,7 +49,7 @@ namespace NibBall
             {
                 SyntheticRoom.Build(visible: true);
                 var d = gameObject.AddComponent<DesktopPlay>();
-                d.cam = Cam; d.ReplaceRequested = Place;
+                d.cam = Cam; d.ReplaceRequested = Place; d.RepairRequested = Repair; d.TargetsRequested = () => { if (Arena != null) Arena.MoveTargets(); };
                 Cam.transform.position = new Vector3(0f, 1.6f, 0f);
                 Cam.transform.rotation = Quaternion.identity;
                 yield return null;
@@ -132,6 +133,8 @@ namespace NibBall
             pm.requestedDetectionMode = PlaneDetectionMode.Horizontal | PlaneDetectionMode.Vertical;
             var scanner = origin.gameObject.AddComponent<RoomScanner>();
             scanner.planes = pm;
+            var bm = origin.gameObject.AddComponent<ARBoundingBoxManager>();
+            origin.gameObject.AddComponent<RoomBoxes>().boxes = bm;
 
             var roomMesh = RoomMesh.Create(origin.TrackablesParent);
             roomMesh.WallsFound += Place;   // the first walls found in the scan: refit the game to them
@@ -140,6 +143,9 @@ namespace NibBall
             hands.trackingSpace = trackingSpace;
             hands.ReplaceRequested = Place;
             hands.ScanRequested = RequestRoomScan;
+            hands.RepairRequested = Repair;
+            hands.TargetsRequested = () => { if (Arena != null) Arena.MoveTargets(); };
+
 
             Show("Looking at your room...  (Y shows / hides the scan)");
             float t = 0f, sinceFirstWall = -1f;
@@ -154,6 +160,7 @@ namespace NibBall
             Place();
             StartCoroutine(ScanReadout(scanner, hands));
             ToySelfCheck();
+            if (!NibBallSteps.AlreadySeen) NibBallSteps.Start(this, hands, Cam);
         }
 
         /// <summary>For the first minute, says what the room scan found, so a missing scan is obvious from inside the headset.</summary>
@@ -178,7 +185,14 @@ namespace NibBall
                 if (t % 10f == 5f) Debug.Log("NibBall: " + hands.Describe());
                 yield return new WaitForSeconds(1f);
             }
-            Show("");
+            while (true)   // after the first minute: just the one line, so a missing scan stays visible
+            {
+                int surf = RoomSurface.All.Count, boxes = RoomBox.All.Count;
+                // the scan delivered more walls than the arena was fitted to (it arrives after the first fit): fit again, once settled
+                if (scanner.WallCount > fittedWalls && Time.time - lastFit > 6f && Arena != null && !Arena.celebrating) Place();
+                if (status != null && !status.text.StartsWith("Repaired") && !status.text.StartsWith("Opening")) Show(surf + boxes == 0 ? "No room scan yet.  B (or both fists) to scan" : "");
+                yield return new WaitForSeconds(2f);
+            }
         }
 
         /// <summary>Builds one of each toy and logs the result, so a build whose code stripping broke a toy says so in the log on first launch.</summary>
@@ -203,22 +217,40 @@ namespace NibBall
 #endif
             Debug.Log("NibBall: room scan requested, accepted=" + ok);
             Show(ok ? "Opening the Quest room scan...  look at every wall, window, door and the furniture" : "The headset would not start a room scan from here.  Try Settings > Environment Setup > Space Setup");
+            StartCoroutine(ClearStatus(8f));
         }
+
+        public void Repair()
+        {
+            int n = Arena != null ? Arena.Repair() : RoomSurface.RepairAll();
+            Debug.Log("NibBall: repaired " + n + " damaged surfaces");
+            Show(n > 0 ? "Repaired " + n + (n == 1 ? " wall or window" : " walls and windows") : "Nothing to repair");
+            StartCoroutine(ClearStatus(3f));
+        }
+
+        IEnumerator ClearStatus(float after) { yield return new WaitForSeconds(after); if (status != null && (status.text.StartsWith("Repaired") || status.text.StartsWith("Opening") || status.text.StartsWith("The headset would not") || status.text == "Nothing to repair")) Show(""); }
 
         void Show(string text) { if (status != null) status.text = text; }
 
         /// <summary>(Re)fits the arena to the room as scanned now, from where the player stands and looks.</summary>
+        int fittedWalls;
+        float lastFit;
+
         public void Place()
         {
             var surfaces = RoomScanner.Snapshot();
+            fittedWalls = 0; foreach (var sf in surfaces) if (sf.kind == SurfaceKind.Wall) fittedWalls++;
+            lastFit = Time.time;
             float floorY = RoomScanner.FloorY();
             var layout = ArenaPlacer.Solve(surfaces, Cam.transform.position, Cam.transform.forward, floorY);
             int score = 0;
             if (Arena != null) { score = Arena.score; Destroy(Arena.gameObject); }
             Arena = Arena.Build(layout, surfaces);
             Arena.score = score;
+            Arena.RefitRequested = Place;
+            Arena.RepairRequested = Repair;
             Arena.SetHint(layout.againstWall
-                ? "Stand on the ring.  Pinch a toy off the rack, swing, let go.  Bullseyes around the room flip bits too"
+                ? "Stand on the ring.  Pinch (or grip) a toy off the rack, swing, let go.  Bullseyes around the room flip bits too"
                 : "No wall to fit against, so the bins stand in open space.  Bullseyes around the room flip bits too");
             Debug.Log($"NibBall: arena at {layout.baseCenter} facing {layout.forward}, bins {layout.binWidth:0.00} m, throw {layout.throwDistance:0.0} m, wall {layout.againstWall}, room depth {layout.depthAvailable:0.0} m");
         }

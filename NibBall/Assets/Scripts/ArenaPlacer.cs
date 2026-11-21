@@ -46,6 +46,15 @@ namespace NibBall
             foreach (var s in surfaces)
                 if (s.kind == SurfaceKind.Wall && s.IsVertical && Flat(s.right).sqrMagnitude > 0.01f) walls.Add(s);
 
+            // only walls of the room the player is in: one that cannot be seen from here (through the shell, or via a doorway) is next door
+            var here = new List<Surface>();
+            Physics.SyncTransforms();
+            foreach (var w in walls) if (Visible(w, player, floorY)) here.Add(w);
+            if (here.Count > 0) walls = here;
+
+            var g0 = Flat(gaze);
+            g0 = g0.sqrMagnitude < 0.01f ? Vector2.zero : g0.normalized;
+
             bool found = false;
             var best = new ArenaLayout();
             float bestScore = float.NegativeInfinity;
@@ -70,7 +79,9 @@ namespace NibBall
                 depth += 0.25f;
                 if (depth < MinDepth) continue;
 
-                float score = Mathf.Min(depth, 5f) + bin - 0.05f * Vector2.Distance(Flat(player), wc);
+                var toWall = wc - Flat(player);
+                float facing = toWall.sqrMagnitude > 0.01f ? Vector2.Dot(g0, toWall.normalized) : 0f;   // a wall the player is looking at wins ties
+                float score = Mathf.Min(depth, 5f) + bin - 0.05f * Vector2.Distance(Flat(player), wc) + 1.0f * facing;
                 if (score <= bestScore) continue;
                 bestScore = score; found = true;
                 best = new ArenaLayout
@@ -97,6 +108,20 @@ namespace NibBall
                 againstWall = false,
                 depthAvailable = OpenCap,
             };
+        }
+
+        static bool Visible(Surface w, Vector3 player, float floorY)
+        {
+            var n = new Vector3(w.normal.x, 0f, w.normal.z).normalized;
+            if (Vector3.Dot(n, player - w.center) < 0f) n = -n;
+            var t = new Vector3(w.right.x, 0f, w.right.z).normalized;
+            var eye = new Vector3(player.x, Mathf.Max(player.y, floorY + 1f), player.z);
+            foreach (var off in new[] { 0f, -0.3f, 0.3f })
+            {
+                var at = w.center + t * (off * w.size.x) + n * 0.3f; at.y = eye.y;
+                if (!Sight.Blocked(eye, at, out _, out bool door) && !door) return true;
+            }
+            return false;
         }
 
         /// <summary>How far a ray from origin along dir runs before it meets any wall other than 'except'.</summary>

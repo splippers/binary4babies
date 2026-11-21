@@ -22,6 +22,7 @@ public static class NibBallBuild
         "com.unity.openxr.feature.arfoundation-meta-camera",
         "com.unity.openxr.feature.arfoundation-meta-plane",
         "com.unity.openxr.feature.arfoundation-meta-mesh",
+        "com.unity.openxr.feature.arfoundation-meta-bounding-boxes",   // Duel!: furniture boxes arrive even when planes do not
         "com.unity.openxr.feature.input.handtracking",
         "com.unity.openxr.feature.input.metahandtrackingaim",   // BoreDoom: without the aim feature the headset can report no hand devices
     };

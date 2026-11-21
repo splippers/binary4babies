@@ -116,18 +116,30 @@ namespace NibBall
                     float height = floorY + 0.8f + (float)rng.NextDouble() * 1.1f;
                     if (!TryWall(room, stand, dir, height, out var spot))
                     {
-                        float d = 2.2f + (float)rng.NextDouble() * 1.2f;
-                        var at = stand + dir * d; at.y = height;
+                        // nothing to hang on that way: float in open air, nearer in if the first try is inside something
+                        bool ok = false; var at = Vector3.zero;
+                        for (float d = 2.2f + (float)rng.NextDouble() * 1.2f; d > 1.0f && !ok; d -= 0.5f)
+                        {
+                            at = stand + dir * d; at.y = height;
+                            ok = OpenAir(stand, at);
+                        }
+                        if (!ok) continue;   // boxed in this way: try another bearing
                         spot = new Spot { position = at, normal = -dir, floating = true };
                     }
                     if (layout.againstWall && Flat(spot.position - layout.baseCenter).magnitude < 1.3f) continue;   // keep clear of the bins
                     spots.Add(spot); used.Add(b);
                 }
             }
-            while (spots.Count < 4)   // a cramped room: stack the rest in the open
+            for (int k = 0; spots.Count < 4 && k < 24; k++)   // a cramped room: look for any open air around the player
+            {
+                var dir = Quaternion.Euler(0f, 180f + k * 37f, 0f) * toBins;
+                var at = stand + dir * (1.2f + (k % 3) * 0.5f); at.y = floorY + 1.0f + (k % 4) * 0.25f;
+                if (OpenAir(stand, at)) spots.Add(new Spot { position = at, normal = -dir, floating = true });
+            }
+            while (spots.Count < 4)   // nothing is open at all (no room data): put them in front of the player regardless
             {
                 var dir = Quaternion.Euler(0f, 180f + spots.Count * 25f, 0f) * toBins;
-                spots.Add(new Spot { position = stand + dir * 2.5f + Vector3.up * (floorY + 1.3f), normal = -dir, floating = true });
+                spots.Add(new Spot { position = stand + dir * 2.0f + Vector3.up * (floorY + 1.3f), normal = -dir, floating = true });
             }
             for (int i = spots.Count - 1; i > 0; i--) { int j = rng.Next(i + 1); (spots[i], spots[j]) = (spots[j], spots[i]); }   // which bit goes where
             return spots;
@@ -135,26 +147,47 @@ namespace NibBall
 
         static Vector3 Flat(Vector3 v) { v.y = 0f; return v; }
 
+        /// <summary>
+        /// Finds a spot by looking along the bearing from head height at the real room, not at the plan of it: the first solid thing the
+        /// line meets (wall or furniture) is where the target hangs, 5 cm proud of it, so it can never be buried. A line that crosses a
+        /// doorway first is rejected, as it would put the target in another room.
+        /// </summary>
         static bool TryWall(IList<Surface> room, Vector3 stand, Vector3 dir, float height, out Spot spot)
         {
             spot = default;
-            float best = 7f; Surface hit = null;
-            var p = new Vector2(stand.x, stand.z); var d = new Vector2(dir.x, dir.z);
-            if (room != null)
-                foreach (var s in room)
-                {
-                    if (s.kind != SurfaceKind.Wall || !s.IsVertical) continue;
-                    var c = new Vector2(s.center.x, s.center.z);
-                    var t = new Vector2(s.right.x, s.right.z).normalized;
-                    float half = s.size.x * 0.5f;
-                    if (ArenaPlacer.Intersect(p, d, c - t * half, c + t * half, out float dist) && dist > 1.2f && dist < best) { best = dist; hit = s; }
-                }
-            if (hit == null) return false;
-            var n = new Vector3(hit.normal.x, 0f, hit.normal.z).normalized;
-            if (Vector3.Dot(n, dir) > 0f) n = -n;
-            var at = stand + dir * best + n * 0.06f; at.y = height;
-            spot = new Spot { position = at, normal = n, floating = false };
-            return true;
+            Physics.SyncTransforms();
+            var eye = stand + Vector3.up * Mathf.Max(1.4f, height);
+            var aim = stand + dir * 8f; aim.y = height;
+            if (Sight.Blocked(eye, aim, out var hit, out bool doorway))
+            {
+                if (doorway || hit.distance < 1.2f || hit.distance > 7f) return false;
+                if (Mathf.Abs(hit.normal.y) > 0.5f) return false;   // a tabletop or the floor, not something to hang on
+                var n = new Vector3(hit.normal.x, 0f, hit.normal.z).normalized;
+                var at = hit.point + hit.normal * 0.05f;
+                if (Sight.Buried(at + n * 0.1f, 0.08f) || OnGlassOrDoor(at)) return false;
+                spot = new Spot { position = at, normal = n, floating = false };
+                return true;
+            }
+            return false;
+        }
+
+        // a target must not sit on a window (it would shatter) or a door
+        static bool OnGlassOrDoor(Vector3 at)
+        {
+            foreach (var r in RoomSurface.All)
+            {
+                if (r.kind != SurfaceKind.Window && r.kind != SurfaceKind.Door) continue;
+                var l = r.transform.InverseTransformPoint(at);
+                if (Mathf.Abs(l.y) < 0.2f && Mathf.Abs(l.x) < r.size.x * 0.5f + 0.25f && Mathf.Abs(l.z) < r.size.y * 0.5f + 0.25f) return true;
+            }
+            return false;
+        }
+
+        /// <summary>Open air for a floating target: nothing solid within reach of it and a clear look from the player.</summary>
+        public static bool OpenAir(Vector3 stand, Vector3 at)
+        {
+            Physics.SyncTransforms();
+            return !Sight.Buried(at, 0.3f) && Sight.Clear(stand + Vector3.up * 1.4f, at);
         }
     }
 }

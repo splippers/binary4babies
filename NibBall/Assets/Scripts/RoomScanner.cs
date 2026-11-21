@@ -16,8 +16,14 @@ namespace NibBall
 
         public int WallCount { get { int n = 0; foreach (var s in RoomSurface.All) if (s.kind == SurfaceKind.Wall && !s.patch) n++; return n; } }
 
-        void OnEnable() { if (planes != null) planes.trackablesChanged.AddListener(OnChanged); }
-        void OnDisable() { if (planes != null) planes.trackablesChanged.RemoveListener(OnChanged); }
+        // 'planes' is set after AddComponent, which has already run OnEnable: listen from Start, and pick up planes that arrived first
+        void Start()
+        {
+            if (planes == null) return;
+            planes.trackablesChanged.AddListener(OnChanged);
+            foreach (var p in planes.trackables) Sync(p);
+        }
+        void OnDestroy() { if (planes != null) planes.trackablesChanged.RemoveListener(OnChanged); }
 
         void OnChanged(ARTrackablesChangedEventArgs<ARPlane> args)
         {

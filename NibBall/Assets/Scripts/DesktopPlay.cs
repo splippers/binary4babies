@@ -6,7 +6,7 @@ namespace NibBall
     public sealed class DesktopPlay : MonoBehaviour
     {
         public Camera cam;
-        public System.Action ReplaceRequested;
+        public System.Action ReplaceRequested, RepairRequested, TargetsRequested;
         float yaw, pitch;
 
         void Update()
@@ -24,6 +24,8 @@ namespace NibBall
                 b.Release(ray.direction * 7f + Vector3.up * 1.5f);
             }
             for (int i = 0; i < Toys.All.Length; i++) if (Input.GetKeyDown(KeyCode.Alpha1 + i)) Toys.Current = Toys.All[i];   // 1-5 pick the toy
+            if (Input.GetKeyDown(KeyCode.R)) RepairRequested?.Invoke();
+            if (Input.GetKeyDown(KeyCode.T)) TargetsRequested?.Invoke();
             if (Input.GetKeyDown(KeyCode.Space)) ReplaceRequested?.Invoke();
         }
     }

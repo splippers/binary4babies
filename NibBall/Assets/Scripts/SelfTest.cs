@@ -24,6 +24,7 @@ namespace NibBall
             yield return Window();
             yield return Wall();
             yield return Gentle();
+            yield return RepairAndSight();
             yield return MeshWallsCheck();
             yield return Toysies();
             yield return Satellites();
@@ -113,7 +114,10 @@ namespace NibBall
                 Check(a.nibble.IsOn(bit) != wasOn || a.celebrating || a.score > 0, "a ball thrown at the " + Nibble.Weights[bit] + " bullseye flipped bit " + Nibble.Weights[bit]);
                 if (b != null) Destroy(b.gameObject);
                 yield return new WaitForSeconds(0.2f);
+                Check(!Sight.Buried(target, 0.03f) && Vector3.Distance(target, a.StandHere) > 0.9f, "the " + Nibble.Weights[bit] + " bullseye at " + target.ToString("0.00") + " is not buried in the room");
             }
+            a.MoveTargets();
+            for (int bit = 0; bit < 4; bit++) { var q = a.SatelliteFor(bit).transform.position; Check(!Sight.Buried(q, 0.03f), "after moving the targets, the " + Nibble.Weights[bit] + " bullseye at " + q.ToString("0.00") + " is not buried"); }
             a.SetSatellites(false);
         }
 
@@ -146,6 +150,34 @@ namespace NibBall
             yield return new WaitForSeconds(1.2f);
             Check(app.Arena.holesPunched == before + 1, "fast ball punched a hole in the wall");
             Check(b != null && b.transform.position.z < -SyntheticRoom.HalfZ, "ball went through the wall");
+        }
+
+        IEnumerator RepairAndSight()
+        {
+            var cam = app.Cam.transform;
+            var inside = cam.position;
+            RoomSurface window = null, wall = null;
+            foreach (var r in RoomSurface.All) { if (r.kind == SurfaceKind.Window && r.HasDamage) window = r; if (r.kind == SurfaceKind.Wall && r.HasDamage) wall = r; }
+            Check(window != null && wall != null, "there is a broken window and a holed wall to look at");
+            if (window == null || wall == null) yield break;
+            yield return new WaitForSeconds(0.6f);
+            Check(window.DamageShown && wall.DamageShown, "damage is visible from inside its own room");
+            cam.position = new Vector3(SyntheticRoom.HalfX + 3f, 1.4f, 0.3f);   // the next room, behind the window's wall
+            yield return new WaitForSeconds(0.6f);
+            Check(!window.DamageShown && !wall.DamageShown, "damage in the other room is hidden through the wall");
+            cam.position = inside;
+            yield return new WaitForSeconds(0.6f);
+            Check(window.DamageShown, "damage shows again back in the room");
+
+            int mended = app.Arena.Repair();
+            Check(mended >= 2 && !window.HasDamage && !wall.HasDamage && app.Arena.windowsBroken == 0 && app.Arena.holesPunched == 0, "repair mended " + mended + " surfaces and reset the count");
+            var from = new Vector3(0f, 1.4f, 0f);
+            var to = new Vector3(SyntheticRoom.HalfX, 1.5f, 0.3f);
+            var b = Ball.Create(from);
+            b.Release((to - from).normalized * 8f);
+            yield return new WaitForSeconds(1.2f);
+            Check(app.Arena.windowsBroken == 1, "a repaired window can be broken again");
+            app.Arena.Repair();
         }
 
         IEnumerator Gentle()

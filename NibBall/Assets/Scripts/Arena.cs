@@ -14,6 +14,8 @@ namespace NibBall
         public int target, score, windowsBroken, holesPunched;
         public bool celebrating;
         public System.Action Changed;
+        /// <summary>Set by the app: the buttons on the panel ask it to refit the bins, or to mend the room.</summary>
+        public System.Action RefitRequested, RepairRequested;
 
         const float BinHeight = 0.45f;
         static readonly Color Off = new Color(0.22f, 0.27f, 0.38f), On = new Color(1f, 0.8f, 0.15f), Good = new Color(0.25f, 0.9f, 0.45f);
@@ -70,6 +72,7 @@ namespace NibBall
             var facing = -layout.forward;
             var across = Vector3.Cross(Vector3.up, facing).normalized;
             ToyRack.Build(transform, StandHere + across * 0.62f + Vector3.up * 0.95f - facing * 0.1f, across);
+            ControlPanel.Build(this, transform, StandHere - across * 0.62f + Vector3.up * 1.0f - facing * 0.1f, across);
             satelliteRoot = new GameObject("Satellites").transform;
             satelliteRoot.SetParent(transform, false);
 
@@ -115,6 +118,24 @@ namespace NibBall
                 satellites[i] = Satellite.Build(this, i, spots[i]);
                 satellites[i].transform.SetParent(satelliteRoot, true);
             }
+        }
+
+        /// <summary>New places for the four bullseyes, keeping the round going.</summary>
+        public void MoveTargets()
+        {
+            PlaceSatellites();
+            Sfx.BitOn(StandHere + Vector3.up);
+            Refresh();
+        }
+
+        /// <summary>Mends every broken window and wall hole in every room.</summary>
+        public int Repair()
+        {
+            int n = RoomSurface.RepairAll();
+            windowsBroken = 0; holesPunched = 0;
+            Sfx.Cheer(StandHere + Vector3.up);
+            Refresh();
+            return n;
         }
 
         public void SetSatellites(bool on) { satelliteRoot.gameObject.SetActive(on); }

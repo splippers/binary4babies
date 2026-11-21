@@ -13,7 +13,10 @@ namespace NibBall
     public sealed class Hands : MonoBehaviour
     {
         public Transform trackingSpace;
-        public System.Action ReplaceRequested, ScanRequested;
+        public System.Action ReplaceRequested, ScanRequested, RepairRequested, TargetsRequested;
+        /// <summary>For the tutorial: a toy was picked up / let go, with the speed it left at.</summary>
+        public System.Action<Ball> Grabbed;
+        public System.Action<Ball, float> Threw;
         const int MaxBalls = 10;
         const float PinchOn = 0.025f, PinchOff = 0.04f, FistOn = 0.065f, FistOff = 0.09f, FistHold = 1.2f;
 
@@ -30,7 +33,11 @@ namespace NibBall
         readonly Queue<Ball> alive = new Queue<Ball>();
         readonly List<XRHandSubsystem> handSystems = new List<XRHandSubsystem>();
         XRHandSubsystem hs;
-        bool xWas, yWas, aWas, bWas;
+        // a controller put down on the sofa still reports as tracked; it counts as idle after a few still seconds so bare hands can take over
+        readonly Vector3[] idleAnchor = new Vector3[2];
+        readonly float[] activeAt = new float[2];
+        const float IdleAfter = 3f;
+        bool xWas, yWas, aWas, bWas, rStickWas, lStickWas;
         float bothSince = -1f;
 
         /// <summary>What the input is doing right now, for the on-screen readout.</summary>
@@ -43,6 +50,9 @@ namespace NibBall
             return s + $"; controllers left={ControllerOn(XRNode.LeftHand)} right={ControllerOn(XRNode.RightHand)}; {Mode}";
         }
 
+        public bool UsingHands => hands[0].usingHand || hands[1].usingHand;
+        public bool ControllerActive => ControllerOn(XRNode.RightHand) || ControllerOn(XRNode.LeftHand);
+
         void Update()
         {
             if (hs == null || !hs.running)
@@ -50,6 +60,7 @@ namespace NibBall
                 handSystems.Clear(); SubsystemManager.GetSubsystems(handSystems);
                 hs = handSystems.Count > 0 ? handSystems[0] : null;
             }
+            TrackIdle(XRNode.RightHand, 0); TrackIdle(XRNode.LeftHand, 1);
             foreach (var h in hands) Tick(h);
             Mode = hands[0].usingHand || hands[1].usingHand ? "bare hands: pinch to pick up, open to throw"
                  : hands[0].held != null || hands[1].held != null || ControllerOn(XRNode.RightHand) || ControllerOn(XRNode.LeftHand) ? "controllers: squeeze to pick up, release to throw"
@@ -68,6 +79,13 @@ namespace NibBall
             bool b = right.isValid && right.TryGetFeatureValue(CommonUsages.secondaryButton, out bool bPressed) && bPressed;
             if (b && !bWas) ScanRequested?.Invoke();
             bWas = b;
+
+            bool rs = right.isValid && right.TryGetFeatureValue(CommonUsages.primary2DAxisClick, out bool rsc) && rsc;
+            if (rs && !rStickWas) RepairRequested?.Invoke();
+            rStickWas = rs;
+            bool ls = left.isValid && left.TryGetFeatureValue(CommonUsages.primary2DAxisClick, out bool lsc) && lsc;
+            if (ls && !lStickWas) TargetsRequested?.Invoke();
+            lStickWas = ls;
 
             bool y = left.isValid && left.TryGetFeatureValue(CommonUsages.secondaryButton, out bool sec) && sec;
             if (y && !yWas) RoomMesh.Instance?.Toggle();
@@ -98,16 +116,38 @@ namespace NibBall
             else if (!h.fist) h.fistSince = -1f;
         }
 
-        static bool ControllerOn(XRNode node)
+        static bool ControllerTracked(XRNode node)
         {
             var d = InputDevices.GetDeviceAtXRNode(node);
             return d.isValid && (d.characteristics & InputDeviceCharacteristics.Controller) != 0
                 && d.TryGetFeatureValue(CommonUsages.devicePosition, out _) && (!d.TryGetFeatureValue(CommonUsages.isTracked, out bool t) || t);
         }
 
+        void TrackIdle(XRNode node, int i)
+        {
+            var d = InputDevices.GetDeviceAtXRNode(node);
+            if (!d.isValid || !d.TryGetFeatureValue(CommonUsages.devicePosition, out var p)) { activeAt[i] = Time.time; return; }
+            d.TryGetFeatureValue(CommonUsages.trigger, out float trig);
+            d.TryGetFeatureValue(CommonUsages.grip, out float grp);
+            d.TryGetFeatureValue(CommonUsages.primaryButton, out bool b1);
+            d.TryGetFeatureValue(CommonUsages.secondaryButton, out bool b2);
+            d.TryGetFeatureValue(CommonUsages.primary2DAxis, out Vector2 stick);
+            if ((p - idleAnchor[i]).sqrMagnitude > 0.012f * 0.012f || trig > 0.1f || grp > 0.1f || b1 || b2 || stick.sqrMagnitude > 0.04f) { idleAnchor[i] = p; activeAt[i] = Time.time; }
+        }
+
+        bool HandTracked(XRNode node) => hs != null && hs.running && (node == XRNode.LeftHand ? hs.leftHand.isTracked : hs.rightHand.isTracked);
+
+        /// <summary>The controller is in play: tracked, and either moving / pressed lately or there are no tracked hands to prefer.</summary>
+        bool ControllerOn(XRNode node)
+        {
+            if (!ControllerTracked(node)) return false;
+            bool idle = Time.time - activeAt[node == XRNode.RightHand ? 0 : 1] > IdleAfter;
+            return !(idle && HandTracked(node));
+        }
+
         void Tick(Hand h)
         {
-            Vector3 pos; Quaternion rot; Vector3 grip; Vector3 track; bool down;
+            Vector3 pos; Quaternion rot; Vector3 grip; Vector3 track; Vector3 poke; bool down;
 
             XRHand xh = hs != null ? (h.node == XRNode.LeftHand ? hs.leftHand : hs.rightHand) : default;
             bool handOn = hs != null && xh.isTracked && !ControllerOn(h.node);
@@ -122,6 +162,7 @@ namespace NibBall
                 grip = trackingSpace.TransformPoint((tip.position + thumb.position) * 0.5f);   // the pinch point: the ball sits between the fingertips
                 track = trackingSpace.TransformPoint(palm.position);                           // the palm carries the throw; fingertips flick open at release
                 rot = trackingSpace.rotation * palm.rotation;
+                poke = trackingSpace.TransformPoint(tip.position);
                 h.fist = IsFist(xh, palm.position, h.fist);
             }
             else
@@ -133,10 +174,15 @@ namespace NibBall
                 rot = trackingSpace.rotation * lr;
                 grip = pos + rot * new Vector3(0f, 0.02f, 0.1f);
                 track = pos;
+                poke = grip;
+                // trigger or grip: either one picks up a toy
                 dev.TryGetFeatureValue(CommonUsages.trigger, out float trigger);
-                down = trigger > 0.6f;
+                dev.TryGetFeatureValue(CommonUsages.grip, out float squeeze);
+                down = h.wasDown ? Mathf.Max(trigger, squeeze) > 0.4f : Mathf.Max(trigger, squeeze) > 0.6f;
                 h.fist = false;
             }
+
+            if (!down && h.held == null) PanelButton.Poke(poke);
 
             h.trail.Add((Time.time, track));
             while (h.trail.Count > 2 && Time.time - h.trail[0].t > 0.25f) h.trail.RemoveAt(0);
@@ -174,10 +220,18 @@ namespace NibBall
 
         void Pick(Hand h, Vector3 at)
         {
-            var b = Ball.Create(at, RackItem.Choose(at));
+            // a toy already lying about or flying is grabbed first; failing that, a fresh one off the rack
+            Ball b = null; float bestD = 0.3f;
+            foreach (var o in alive)
+            {
+                if (o == null || o.held || o.scored) continue;
+                float d = Vector3.Distance(o.transform.position, at);
+                if (d < bestD) { b = o; bestD = d; }
+            }
+            if (b == null) { b = Ball.Create(at, RackItem.Choose(at)); alive.Enqueue(b); }
             b.Hold();
             h.held = b;
-            alive.Enqueue(b);
+            Grabbed?.Invoke(b);
             while (alive.Count > MaxBalls) { var old = alive.Dequeue(); if (old != null && !old.held) Destroy(old.gameObject); }
         }
 
@@ -199,8 +253,10 @@ namespace NibBall
                 if (dt > 0.03f) v = (h.trail[i1].p - h.trail[i0].p) / dt;
             }
             v = Vector3.ClampMagnitude(v * (bareHand ? 1.35f : 1.1f), 12f);
-            h.held.Release(v);
+            var thrown = h.held;
+            thrown.Release(v);
             h.held = null;
+            Threw?.Invoke(thrown, v.magnitude);
         }
     }
 }
